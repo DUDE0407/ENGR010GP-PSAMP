@@ -1,0 +1,4 @@
+station_id,voltage_sag_events,voltage_swell_events,over_current_events,very_low_pf_events,first_fault,last_fault
+SUB_001,24,0,514,0,2024-02-08 12:00:00,2024-06-29 19:00:00
+SUB_002,0,0,3974,415,2024-01-01 04:00:00,2024-06-30 00:00:00
+SUB_003,0,0,0,0,,
