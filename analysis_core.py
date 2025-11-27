@@ -51,24 +51,44 @@ def identify_load_patterns(df: pd.DataFrame) -> Dict[str, pd.DataFrame]:
 
     indexed = df.set_index("timestamp")
     # Averaging the dataset at daily and weekly resolution highlights long-term trends.
-    daily = (
-        indexed.groupby("station_id")["real_power_mw"].resample("D").mean().reset_index()
+    grouped = indexed.groupby("station_id")
+
+    daily_real = grouped["real_power_mw"].resample("D").mean().reset_index()
+    daily_reactive = grouped["reactive_power_mvar"].resample("D").mean().reset_index()
+    daily = daily_real.merge(
+        daily_reactive,
+        on=["station_id", "timestamp"],
+        how="left",
     )
-    weekly = (
-        indexed.groupby("station_id")["real_power_mw"].resample("W").mean().reset_index()
+
+    weekly_real = grouped["real_power_mw"].resample("W").mean().reset_index()
+    weekly_reactive = grouped["reactive_power_mvar"].resample("W").mean().reset_index()
+    weekly = weekly_real.merge(
+        weekly_reactive,
+        on=["station_id", "timestamp"],
+        how="left",
     )
-    hourly_profile = (
+
+    hourly_real = (
         indexed.groupby(["station_id", indexed.index.hour])["real_power_mw"]
         .mean()
+        .rename("mean_real_power_mw")
         .reset_index()
-        .rename(
-            columns={
-                "level_1": "hour",
-                "timestamp": "hour",
-                "real_power_mw": "mean_real_power_mw",
-            }
-        )
     )
+    hourly_reactive = (
+        indexed.groupby(["station_id", indexed.index.hour])["reactive_power_mvar"]
+        .mean()
+        .rename("mean_reactive_power_mvar")
+        .reset_index()
+    )
+    hourly_real.rename(columns={"level_1": "hour", "timestamp": "hour"}, inplace=True)
+    hourly_reactive.rename(columns={"level_1": "hour", "timestamp": "hour"}, inplace=True)
+    hourly_profile = hourly_real.merge(
+        hourly_reactive,
+        on=["station_id", "hour"],
+        how="left",
+    )
+
     # Hour index from the groupby comes back as "level_1"; normalize it for readability.
     hourly_profile["hour"] = hourly_profile["hour"].astype(int)
     return {

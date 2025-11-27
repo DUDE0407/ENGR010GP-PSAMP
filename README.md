@@ -1,7 +1,7 @@
 # ENGR 010 Group Project - Electrical Engineering Option
 
 ## Overview
-- Evaluates `power_system_data.csv` to highlight voltage, current, and real-power performance for substations SUB_001 to SUB_003 (Jan-Jun 2024).
+- Evaluates `power_system_data.csv` to highlight voltage, current, real-power, and reactive-power performance for substations SUB_001 to SUB_003 (Jan-Jun 2024).
 - Outputs actionable metrics (basic statistics, standards compliance, power quality indices, fault summaries) and supporting visualisations.
 - Provides an interactive dashboard for quick review alongside an automated reporting pipeline.
 
@@ -24,7 +24,7 @@
 - Execute `python power_analysis_script.py` from the project root.
 - The script reads `power_system_data.csv` via `analysis_core.py`, then:
 	- Saves CSV summaries under `analysis_outputs/reports/`.
-	- Stores trend charts and comparison plots under `analysis_outputs/figures/`.
+	- Stores trend charts and comparison plots (real and reactive power, voltage, current, power factor) under `analysis_outputs/figures/`.
 	- Logs progress to the console for traceability.
 - Rerun the script whenever the data file changes to refresh exported reports.
 
@@ -51,5 +51,6 @@
 
 ## Change Log Snapshot
 - **Nov 24, 2025**: Automated reporting pipeline added (`power_analysis_script.py`) with export directories and data science dependencies.
+- **Dec 03, 2025**: Reactive power analytics expanded across dashboard and batch reports, including new MVAr visuals.
 - **Nov 27, 2025**: Interactive Pygame dashboard introduced (`main.py`, `dashboard/`), sharing analytics via `analysis_core.py`; sidebar now scrollable for complete fault reporting.
 

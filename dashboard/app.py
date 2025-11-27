@@ -80,13 +80,25 @@ def _format_basic_statistics(stats: pd.DataFrame) -> List[str]:
     if stats.empty:
         return lines
     for _, row in stats.iterrows():
+        lines.append(f"{row['station_id']}")
         lines.append(
-            (
-                f"{row['station_id']}: V={row['voltage_pu_mean']:.3f} pu | "
-                f"I={row['current_pu_mean']:.1f} pu | P={row['real_power_mw_mean']:.1f} MW | "
-                f"PF={row['power_factor_mean']:.3f}"
-            )
+            f"  Voltage: {_format_value(row['voltage_pu_mean'], '{:.3f}')} pu"
         )
+        lines.append(
+            f"  Current: {_format_value(row['current_pu_mean'], '{:.1f}')} pu"
+        )
+        lines.append(
+            f"  Real Power: {_format_value(row['real_power_mw_mean'], '{:.1f}')} MW"
+        )
+        lines.append(
+            f"  Reactive Power: {_format_value(row['reactive_power_mvar_mean'], '{:.1f}')} MVAr"
+        )
+        lines.append(
+            f"  Power Factor: {_format_value(row['power_factor_mean'], '{:.3f}')}"
+        )
+        lines.append("")
+    if lines and lines[-1] == "":
+        lines.pop()
     return lines
 
 
@@ -95,13 +107,19 @@ def _format_compliance(comparison: pd.DataFrame) -> List[str]:
     if comparison.empty:
         return lines
     for _, row in comparison.iterrows():
+        lines.append(f"{row['station_id']}")
         lines.append(
-            (
-                f"{row['station_id']}: Voltage {row['voltage_within_pct']:.1f}% | "
-                f"PF {row['power_factor_within_pct']:.1f}% | "
-                f"Current {row['current_within_pct']:.1f}%"
-            )
+            f"  Voltage within band: {_format_value(row['voltage_within_pct'], '{:.1f}')}%"
         )
+        lines.append(
+            f"  PF within band: {_format_value(row['power_factor_within_pct'], '{:.1f}')}%"
+        )
+        lines.append(
+            f"  Current within band: {_format_value(row['current_within_pct'], '{:.1f}')}%"
+        )
+        lines.append("")
+    if lines and lines[-1] == "":
+        lines.pop()
     return lines
 
 
@@ -110,12 +128,28 @@ def _format_quality(quality: pd.DataFrame) -> List[str]:
     if quality.empty:
         return lines
     for _, row in quality.iterrows():
+        lines.append(f"{row['station_id']}")
         lines.append(
-            (
-                f"{row['station_id']}: Avg PF {row['avg_power_factor']:.3f} (min {row['min_power_factor']:.3f}) | "
-                f"Voltage std {row['voltage_std']:.4f} pu | Low PF hrs {row['low_power_factor_pct']:.1f}%"
-            )
+            "  Power Factor avg/min: "
+            f"{_format_value(row['avg_power_factor'], '{:.3f}')} / "
+            f"{_format_value(row['min_power_factor'], '{:.3f}')}"
         )
+        lines.append(
+            f"  Voltage deviation (std): {_format_value(row['voltage_std'], '{:.4f}')} pu"
+        )
+        lines.append(
+            f"  Low PF hours: {_format_value(row['low_power_factor_pct'], '{:.1f}')}%"
+        )
+        lines.append(
+            f"  Very low PF hours: {_format_value(row['very_low_power_factor_pct'], '{:.1f}')}%"
+        )
+        lines.append(
+            f"  Avg reactive power: {_format_value(row['avg_reactive_power_mvar'], '{:.2f}')} MVAr"
+        )
+        lines.append(f"  Load factor: {_format_value(row['load_factor'], '{:.3f}')}")
+        lines.append("")
+    if lines and lines[-1] == "":
+        lines.pop()
     return lines
 
 
@@ -125,6 +159,12 @@ def _safe_int(value: object) -> int:
     return int(value)
 
 
+def _format_value(value: object, pattern: str) -> str:
+    if value is None or pd.isna(value):
+        return "-"
+    return pattern.format(value)
+
+
 def _format_faults(faults: pd.DataFrame) -> List[str]:
     lines: List[str] = []
     if faults.empty:
@@ -132,13 +172,15 @@ def _format_faults(faults: pd.DataFrame) -> List[str]:
     for _, row in faults.iterrows():
         first = _format_timestamp(row.get("first_fault"))
         last = _format_timestamp(row.get("last_fault"))
-        lines.append(
-            (
-                f"{row['station_id']}: Sag {_safe_int(row['voltage_sag_events'])} | "
-                f"Swell {_safe_int(row['voltage_swell_events'])} | Overcurrent {_safe_int(row['over_current_events'])} | "
-                f"PF<0.8 {_safe_int(row['very_low_pf_events'])} | First {first} | Last {last}"
-            )
-        )
+        lines.append(f"{row['station_id']}")
+        lines.append(f"  Voltage sag events: {_safe_int(row['voltage_sag_events'])}")
+        lines.append(f"  Voltage swell events: {_safe_int(row['voltage_swell_events'])}")
+        lines.append(f"  Overcurrent events: {_safe_int(row['over_current_events'])}")
+        lines.append(f"  PF < 0.8 events: {_safe_int(row['very_low_pf_events'])}")
+        lines.append(f"  First / Last: {first} – {last}")
+        lines.append("")
+    if lines and lines[-1] == "":
+        lines.pop()
     return lines
 
 
@@ -480,6 +522,18 @@ def run() -> None:
                 patterns["hourly_profile"],
                 comparison,
             )
+            if view_mode == "daily":
+                excluded = {
+                    "Daily Mean Real Power",
+                    "Daily Mean Reactive Power",
+                    "Weekly Mean Real Power",
+                    "Weekly Mean Reactive Power",
+                }
+                charts = [
+                    (name, surface)
+                    for name, surface in charts
+                    if name not in excluded
+                ]
 
         chart_index = min(chart_index, len(charts) - 1) if charts else 0
         _update_blocks()

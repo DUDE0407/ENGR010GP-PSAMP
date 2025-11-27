@@ -36,7 +36,8 @@ def _line_chart(
     ax.set_xlabel(xlabel)
     ax.set_ylabel(ylabel)
     ax.grid(True, linestyle="--", linewidth=0.5, alpha=0.6)
-    ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.18), ncol=3)
+    legend_cols = min(3, max(1, data.shape[1]))
+    ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.18), ncol=legend_cols)
     fig.tight_layout()
     return _figure_to_surface(fig)
 
@@ -75,41 +76,91 @@ def build_chart_surfaces(
     charts: List[Tuple[str, pygame.Surface]] = []
 
     if not daily.empty:
-        daily_pivot = (
-            daily.pivot(index="timestamp", columns="station_id", values="real_power_mw")
-            .sort_index()
-        )
-        # Present each pivoted frame with a descriptive label for cycling in the UI.
-        charts.append(
-            (
-                "Daily Mean Real Power",
-                _line_chart(daily_pivot, "Daily Mean Real Power", "Date", "MW"),
+        if "real_power_mw" in daily:
+            daily_real = (
+                daily.pivot(index="timestamp", columns="station_id", values="real_power_mw")
+                .sort_index()
             )
-        )
+            charts.append(
+                (
+                    "Daily Mean Real Power",
+                    _line_chart(daily_real, "Daily Mean Real Power", "Date", "MW"),
+                )
+            )
+        if "reactive_power_mvar" in daily:
+            daily_reactive = (
+                daily.pivot(index="timestamp", columns="station_id", values="reactive_power_mvar")
+                .sort_index()
+            )
+            charts.append(
+                (
+                    "Daily Mean Reactive Power",
+                    _line_chart(
+                        daily_reactive,
+                        "Daily Mean Reactive Power",
+                        "Date",
+                        "MVAr",
+                    ),
+                )
+            )
 
     if not weekly.empty:
-        weekly_pivot = (
-            weekly.pivot(index="timestamp", columns="station_id", values="real_power_mw")
-            .sort_index()
-        )
-        charts.append(
-            (
-                "Weekly Mean Real Power",
-                _line_chart(weekly_pivot, "Weekly Mean Real Power", "Week", "MW"),
+        if "real_power_mw" in weekly:
+            weekly_real = (
+                weekly.pivot(index="timestamp", columns="station_id", values="real_power_mw")
+                .sort_index()
             )
-        )
+            charts.append(
+                (
+                    "Weekly Mean Real Power",
+                    _line_chart(weekly_real, "Weekly Mean Real Power", "Week", "MW"),
+                )
+            )
+        if "reactive_power_mvar" in weekly:
+            weekly_reactive = (
+                weekly.pivot(index="timestamp", columns="station_id", values="reactive_power_mvar")
+                .sort_index()
+            )
+            charts.append(
+                (
+                    "Weekly Mean Reactive Power",
+                    _line_chart(
+                        weekly_reactive,
+                        "Weekly Mean Reactive Power",
+                        "Week",
+                        "MVAr",
+                    ),
+                )
+            )
 
     if not hourly.empty:
-        hourly_pivot = (
-            hourly.pivot(index="hour", columns="station_id", values="mean_real_power_mw")
-            .sort_index()
-        )
-        charts.append(
-            (
-                "Diurnal Load Profile",
-                _line_chart(hourly_pivot, "Average Hourly Load", "Hour", "MW"),
+        if "mean_real_power_mw" in hourly:
+            hourly_real = (
+                hourly.pivot(index="hour", columns="station_id", values="mean_real_power_mw")
+                .sort_index()
             )
-        )
+            charts.append(
+                (
+                    "Diurnal Load Profile",
+                    _line_chart(hourly_real, "Average Hourly Load", "Hour", "MW"),
+                )
+            )
+        if "mean_reactive_power_mvar" in hourly:
+            hourly_reactive = (
+                hourly.pivot(index="hour", columns="station_id", values="mean_reactive_power_mvar")
+                .sort_index()
+            )
+            charts.append(
+                (
+                    "Diurnal Reactive Load",
+                    _line_chart(
+                        hourly_reactive,
+                        "Average Hourly Reactive Load",
+                        "Hour",
+                        "MVAr",
+                    ),
+                )
+            )
 
     if not compliance.empty:
         charts.append(

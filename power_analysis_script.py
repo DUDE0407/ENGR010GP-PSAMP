@@ -43,56 +43,95 @@ def create_visualizations(
 
 	for station, group in df.groupby("station_id"):
 		# Plot the main electrical measurements together for an at-a-glance review.
-		fig, axes = plt.subplots(4, 1, figsize=(12, 10), sharex=True)
+		fig, axes = plt.subplots(5, 1, figsize=(12, 12), sharex=True)
 		group.plot(x="timestamp", y="voltage_pu", ax=axes[0], legend=False)
 		axes[0].set_ylabel("Voltage (p.u.)")
 		group.plot(x="timestamp", y="current_pu", ax=axes[1], legend=False)
 		axes[1].set_ylabel("Current (p.u.)")
 		group.plot(x="timestamp", y="real_power_mw", ax=axes[2], legend=False)
 		axes[2].set_ylabel("Real Power (MW)")
-		group.plot(x="timestamp", y="power_factor", ax=axes[3], legend=False)
-		axes[3].set_ylabel("Power Factor")
-		axes[3].set_xlabel("Timestamp")
+		if "reactive_power_mvar" in group:
+			group.plot(x="timestamp", y="reactive_power_mvar", ax=axes[3], legend=False)
+			axes[3].set_ylabel("Reactive Power (MVAr)")
+		else:
+			axes[3].set_visible(False)
+		group.plot(x="timestamp", y="power_factor", ax=axes[4], legend=False)
+		axes[4].set_ylabel("Power Factor")
+		axes[4].set_xlabel("Timestamp")
 		fig.suptitle(f"Station {station} Time-Series", fontsize=14)
 		plt.tight_layout()
 		fig.savefig(output_dir / f"{station}_timeseries.png", dpi=150)
 		plt.close(fig)
 
-	daily = load_patterns["daily"].pivot(
-		index="timestamp", columns="station_id", values="real_power_mw"
-	)
-	fig, ax = plt.subplots(figsize=(12, 6))
-	daily.plot(ax=ax)
-	ax.set_ylabel("Daily Mean Real Power (MW)")
-	ax.set_title("Daily Load Profile")
-	plt.tight_layout()
-	fig.savefig(output_dir / "daily_load_profile.png", dpi=150)
-	plt.close(fig)
+	daily = load_patterns["daily"]
+	if not daily.empty:
+		daily_real = daily.pivot(index="timestamp", columns="station_id", values="real_power_mw")
+		fig, ax = plt.subplots(figsize=(12, 6))
+		daily_real.plot(ax=ax)
+		ax.set_ylabel("Daily Mean Real Power (MW)")
+		ax.set_title("Daily Load Profile")
+		plt.tight_layout()
+		fig.savefig(output_dir / "daily_load_profile.png", dpi=150)
+		plt.close(fig)
+		if "reactive_power_mvar" in daily:
+			daily_reactive = daily.pivot(index="timestamp", columns="station_id", values="reactive_power_mvar")
+			fig, ax = plt.subplots(figsize=(12, 6))
+			daily_reactive.plot(ax=ax)
+			ax.set_ylabel("Daily Mean Reactive Power (MVAr)")
+			ax.set_title("Daily Reactive Power Profile")
+			plt.tight_layout()
+			fig.savefig(output_dir / "daily_reactive_profile.png", dpi=150)
+			plt.close(fig)
 
-	hourly = load_patterns["hourly_profile"].pivot(
-		index="hour", columns="station_id", values="mean_real_power_mw"
-	)
-	# Highlight typical diurnal behaviour by comparing average load per hour.
-	fig, ax = plt.subplots(figsize=(12, 6))
-	hourly.plot(ax=ax)
-	ax.set_xlabel("Hour of Day")
-	ax.set_ylabel("Average Real Power (MW)")
-	ax.set_title("Typical Diurnal Load Shape")
-	plt.tight_layout()
-	fig.savefig(output_dir / "hourly_load_profile.png", dpi=150)
-	plt.close(fig)
+	hourly = load_patterns["hourly_profile"]
+	if not hourly.empty:
+		hourly_real = hourly.pivot(index="hour", columns="station_id", values="mean_real_power_mw")
+		# Highlight typical diurnal behaviour by comparing average load per hour.
+		fig, ax = plt.subplots(figsize=(12, 6))
+		hourly_real.plot(ax=ax)
+		ax.set_xlabel("Hour of Day")
+		ax.set_ylabel("Average Real Power (MW)")
+		ax.set_title("Typical Diurnal Load Shape")
+		plt.tight_layout()
+		fig.savefig(output_dir / "hourly_load_profile.png", dpi=150)
+		plt.close(fig)
+		if "mean_reactive_power_mvar" in hourly:
+			hourly_reactive = hourly.pivot(index="hour", columns="station_id", values="mean_reactive_power_mvar")
+			fig, ax = plt.subplots(figsize=(12, 6))
+			hourly_reactive.plot(ax=ax)
+			ax.set_xlabel("Hour of Day")
+			ax.set_ylabel("Average Reactive Power (MVAr)")
+			ax.set_title("Typical Diurnal Reactive Load")
+			plt.tight_layout()
+			fig.savefig(output_dir / "hourly_reactive_profile.png", dpi=150)
+			plt.close(fig)
 
 	weekly = load_patterns["weekly"]
-	fig, ax = plt.subplots(figsize=(12, 6))
-	sns.lineplot(
-		data=weekly, x="timestamp", y="real_power_mw", hue="station_id", ax=ax
-	)
-	# Weekly aggregation smooths volatility and reveals trend direction.
-	ax.set_ylabel("Weekly Mean Real Power (MW)")
-	ax.set_title("Weekly Load Trend")
-	plt.tight_layout()
-	fig.savefig(output_dir / "weekly_load_trend.png", dpi=150)
-	plt.close(fig)
+	if not weekly.empty:
+		fig, ax = plt.subplots(figsize=(12, 6))
+		sns.lineplot(
+			data=weekly, x="timestamp", y="real_power_mw", hue="station_id", ax=ax
+		)
+		# Weekly aggregation smooths volatility and reveals trend direction.
+		ax.set_ylabel("Weekly Mean Real Power (MW)")
+		ax.set_title("Weekly Load Trend")
+		plt.tight_layout()
+		fig.savefig(output_dir / "weekly_load_trend.png", dpi=150)
+		plt.close(fig)
+		if "reactive_power_mvar" in weekly:
+			fig, ax = plt.subplots(figsize=(12, 6))
+			sns.lineplot(
+				data=weekly,
+				x="timestamp",
+				y="reactive_power_mvar",
+				hue="station_id",
+				ax=ax,
+			)
+			ax.set_ylabel("Weekly Mean Reactive Power (MVAr)")
+			ax.set_title("Weekly Reactive Power Trend")
+			plt.tight_layout()
+			fig.savefig(output_dir / "weekly_reactive_trend.png", dpi=150)
+			plt.close(fig)
 
 
 def export_results(
