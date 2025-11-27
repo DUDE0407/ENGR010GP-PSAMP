@@ -310,6 +310,7 @@ def run() -> None:
 
     def _rebuild_sidebar_surface() -> None:
         nonlocal sidebar_surface, sidebar_content_height, sidebar_scroll_max, sidebar_offset
+        # Pre-render the text blocks onto an off-screen surface; the main loop blits a view slice.
         sidebar_surface, sidebar_content_height = _build_sidebar_surface(
             text_blocks,
             heading_font,
@@ -378,6 +379,7 @@ def run() -> None:
             if event.type == pygame.QUIT:
                 running = False
             elif event.type == pygame.KEYDOWN:
+                # Keyboard shortcuts mirror the on-screen controls for power users.
                 if event.key in (pygame.K_ESCAPE, pygame.K_q):
                     _apply_action("exit")
                 elif event.key == pygame.K_RIGHT:
@@ -411,6 +413,7 @@ def run() -> None:
                         ),
                     )
             elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                # Buttons are the primary interaction target for casual users.
                 for button in buttons:
                     if button.rect.collidepoint(event.pos):
                         _apply_action(button.action)
@@ -429,6 +432,7 @@ def run() -> None:
         sidebar_y = sidebar_rect.top + BLOCK_PADDING
         view_rect = pygame.Rect(0, sidebar_offset, sidebar_width, sidebar_view_height)
         if sidebar_surface is not None:
+            # Only the visible slice of the sidebar surface is blitted each frame.
             screen.blit(sidebar_surface, (sidebar_x, sidebar_y), area=view_rect)
         else:
             placeholder = body_font.render("No data available.", True, TEXT_COLOR)
@@ -447,6 +451,7 @@ def run() -> None:
             if sidebar_scroll_max > 0:
                 knob_top += int((sidebar_offset / sidebar_scroll_max) * (sidebar_view_height - knob_height))
             knob_rect = pygame.Rect(track_rect.left, knob_top, track_rect.width, knob_height)
+            # Draw a minimal scrollbar to communicate overflow without overwhelming the UI.
             pygame.draw.rect(screen, ACCENT_COLOR, knob_rect, border_radius=2)
 
         chart_canvas_rect = pygame.Rect(
@@ -455,6 +460,7 @@ def run() -> None:
             max(240, chart_rect.width - 60),
             max(200, chart_rect.height - caption_offset - 60),
         )
+        # The chart surface is scaled into this inner rectangle to preserve consistent margins.
 
         if charts:
             name, surface = charts[chart_index]

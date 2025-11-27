@@ -26,6 +26,7 @@ from analysis_core import (
 )
 
 
+# Apply a consistent Matplotlib aesthetic for all exported plots.
 sns.set_theme(style="whitegrid")
 
 
@@ -41,6 +42,7 @@ def create_visualizations(
 	output_dir.mkdir(parents=True, exist_ok=True)
 
 	for station, group in df.groupby("station_id"):
+		# Plot the main electrical measurements together for an at-a-glance review.
 		fig, axes = plt.subplots(4, 1, figsize=(12, 10), sharex=True)
 		group.plot(x="timestamp", y="voltage_pu", ax=axes[0], legend=False)
 		axes[0].set_ylabel("Voltage (p.u.)")
@@ -70,6 +72,7 @@ def create_visualizations(
 	hourly = load_patterns["hourly_profile"].pivot(
 		index="hour", columns="station_id", values="mean_real_power_mw"
 	)
+	# Highlight typical diurnal behaviour by comparing average load per hour.
 	fig, ax = plt.subplots(figsize=(12, 6))
 	hourly.plot(ax=ax)
 	ax.set_xlabel("Hour of Day")
@@ -84,6 +87,7 @@ def create_visualizations(
 	sns.lineplot(
 		data=weekly, x="timestamp", y="real_power_mw", hue="station_id", ax=ax
 	)
+	# Weekly aggregation smooths volatility and reveals trend direction.
 	ax.set_ylabel("Weekly Mean Real Power (MW)")
 	ax.set_title("Weekly Load Trend")
 	plt.tight_layout()
@@ -106,6 +110,7 @@ def export_results(
 	standard_comparison.to_csv(output_dir / "standard_comparison.csv", index=False)
 	quality_indices.to_csv(output_dir / "power_quality_indices.csv", index=False)
 	fault_summary.to_csv(output_dir / "fault_summary.csv", index=False)
+	# Persist each load-pattern slice so downstream notebooks can decide which view to load.
 	for name, frame in load_patterns.items():
 		frame.to_csv(output_dir / f"load_pattern_{name}.csv", index=False)
 
@@ -121,6 +126,7 @@ def run_analysis(csv_path: Path, reports_dir: Path, figures_dir: Path) -> None:
 	quality_indices = calculate_power_quality_indices(df, standards)
 	fault_summary = perform_fault_analysis(df, standards)
 
+	# Write results to disk before generating plots so artefacts exist even if plotting fails.
 	export_results(
 		reports_dir,
 		stats,

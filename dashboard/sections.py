@@ -6,6 +6,7 @@ from typing import Any
 
 
 def __getattr__(name: str) -> Any:
+    # Any attempt to import legacy Streamlit hooks should fail fast with guidance.
     raise ImportError(
         "The Streamlit dashboard has been replaced by the Pygame implementation. "
         "Importing 'dashboard.sections' is no longer supported."

@@ -15,6 +15,7 @@ import pygame
 
 
 def _figure_to_surface(fig: plt.Figure) -> pygame.Surface:
+    # Render the Matplotlib figure into an in-memory PNG so Pygame can blit it.
     buffer = BytesIO()
     fig.savefig(buffer, format="PNG", bbox_inches="tight", dpi=120)
     plt.close(fig)
@@ -48,6 +49,7 @@ def _bar_chart(
     fig, ax = plt.subplots(figsize=(8.0, 4.5))
     colors = plt.get_cmap("viridis")([0.2, 0.5, 0.8])
     for idx, column in enumerate(["voltage_within_pct", "power_factor_within_pct", "current_within_pct"]):
+        # Encode category information inside the x-label to keep the chart compact.
         ax.bar(
             data["station_id"] + f"\n{column.split('_')[0].title()}",
             data[column],
@@ -77,6 +79,7 @@ def build_chart_surfaces(
             daily.pivot(index="timestamp", columns="station_id", values="real_power_mw")
             .sort_index()
         )
+        # Present each pivoted frame with a descriptive label for cycling in the UI.
         charts.append(
             (
                 "Daily Mean Real Power",

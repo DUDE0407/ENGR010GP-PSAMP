@@ -41,6 +41,7 @@ def calculate_basic_statistics(df: pd.DataFrame) -> pd.DataFrame:
     ]
     grouped = df.groupby("station_id")[metrics]
     stats = grouped.agg(["mean", "median", "std"])
+    # Flatten the multi-index columns so callers get simple metric labels.
     stats.columns = ["_".join(col) for col in stats.columns]
     return stats.reset_index()
 
@@ -49,6 +50,7 @@ def identify_load_patterns(df: pd.DataFrame) -> Dict[str, pd.DataFrame]:
     """Capture daily, weekly, and diurnal load signatures for each station."""
 
     indexed = df.set_index("timestamp")
+    # Averaging the dataset at daily and weekly resolution highlights long-term trends.
     daily = (
         indexed.groupby("station_id")["real_power_mw"].resample("D").mean().reset_index()
     )
@@ -67,6 +69,7 @@ def identify_load_patterns(df: pd.DataFrame) -> Dict[str, pd.DataFrame]:
             }
         )
     )
+    # Hour index from the groupby comes back as "level_1"; normalize it for readability.
     hourly_profile["hour"] = hourly_profile["hour"].astype(int)
     return {
         "daily": daily,
@@ -116,6 +119,8 @@ def calculate_power_quality_indices(df: pd.DataFrame, standards: GridStandards) 
         return (series < standards.power_factor_fault).mean() * 100
 
     grouped = work.groupby("station_id")
+    # Aggregate several custom metrics in one pass so downstream consumers receive
+    # a single table of per-station indices.
     summary = grouped.agg(
         avg_power_factor=("power_factor", "mean"),
         min_power_factor=("power_factor", "min"),
@@ -145,6 +150,7 @@ def perform_fault_analysis(df: pd.DataFrame, standards: GridStandards) -> pd.Dat
         over_current = group[group["current_pu"] > standards.current_max]
         very_low_pf = group[group["power_factor"] < standards.power_factor_fault]
 
+        # Combine timestamps from all detected fault windows to report first/last events.
         fault_frames = [
             frame[["timestamp"]]
             for frame in [voltage_sag, voltage_swell, over_current, very_low_pf]

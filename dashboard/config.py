@@ -10,6 +10,7 @@ from pathlib import Path
 class DashboardConfig:
     """Encapsulate frequently used filesystem locations."""
 
+    # Resolve the repository root relative to this module for path calculations.
     project_root: Path = Path(__file__).resolve().parents[1]
 
     @property

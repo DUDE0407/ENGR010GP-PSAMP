@@ -25,11 +25,13 @@ STANDARDS = GridStandards()
 
 @lru_cache(maxsize=1)
 def _load_dataset() -> pd.DataFrame:
+    # Cache the raw dataset so multiple widgets avoid repeated disk reads.
     return load_power_data(CONFIG.data_file).copy()
 
 
 @lru_cache(maxsize=1)
 def _load_patterns() -> Dict[str, pd.DataFrame]:
+    # Resampling is relatively expensive; cache the derived structures as well.
     patterns = identify_load_patterns(_load_dataset())
     return {name: frame.copy() for name, frame in patterns.items()}
 
@@ -72,6 +74,7 @@ def load_hourly_profile() -> pd.DataFrame:
 def clear_cache() -> None:
     """Reset cached data so the UI can pick up refreshed files."""
 
+    # Each loader maintains its own cache; clear them all to force recomputation on demand.
     _load_dataset.cache_clear()
     _load_patterns.cache_clear()
     load_basic_statistics.cache_clear()
