@@ -29,6 +29,12 @@ def _load_dataset() -> pd.DataFrame:
     return load_power_data(CONFIG.data_file).copy()
 
 
+def load_dataset() -> pd.DataFrame:
+    """Return a copy of the parsed dataset for downstream filtering."""
+
+    return _load_dataset().copy()
+
+
 @lru_cache(maxsize=1)
 def _load_patterns() -> Dict[str, pd.DataFrame]:
     # Resampling is relatively expensive; cache the derived structures as well.

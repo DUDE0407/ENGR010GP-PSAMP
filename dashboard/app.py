@@ -8,16 +8,15 @@ from typing import List, Sequence, Tuple
 import pandas as pd
 import pygame
 
-from .data_loader import (
-    clear_cache,
-    load_basic_statistics,
-    load_daily_pattern,
-    load_fault_summary,
-    load_hourly_profile,
-    load_power_quality_indices,
-    load_standard_comparison,
-    load_weekly_pattern,
+from analysis_core import (
+    GridStandards,
+    calculate_basic_statistics,
+    calculate_power_quality_indices,
+    compare_to_standards,
+    identify_load_patterns,
+    perform_fault_analysis,
 )
+from .data_loader import clear_cache, load_dataset
 from .figures import build_chart_surfaces
 
 BACKGROUND = (18, 20, 28)
@@ -30,6 +29,8 @@ BUTTON_BG = (57, 97, 200)
 BUTTON_HOVER = (82, 122, 230)
 BUTTON_BORDER = (21, 25, 36)
 BUTTON_TEXT = (245, 247, 252)
+BUTTON_DISABLED_BG = (44, 51, 76)
+BUTTON_DISABLED_TEXT = (160, 168, 186)
 
 SCREEN_SIZE = (1280, 720)
 SIDEBAR_WIDTH = 480
@@ -39,12 +40,22 @@ BUTTON_WIDTH = 150
 BUTTON_HEIGHT = 44
 BUTTON_SPACING = 16
 
+VIEW_MODES: Tuple[str, ...] = ("overall", "monthly", "daily")
+STANDARDS = GridStandards()
+
 
 @dataclass
 class Button:
     label: str
     rect: pygame.Rect
     action: str
+    enabled: bool = True
+
+
+@dataclass(frozen=True)
+class PeriodOption:
+    key: object
+    label: str
 
 
 def _wrap_text(text: str, font: pygame.font.Font, max_width: int) -> List[str]:
@@ -202,11 +213,70 @@ def _build_sidebar_surface(
     return surface, content_height
 
 
+def _build_period_options(df: pd.DataFrame) -> dict[str, List[PeriodOption]]:
+    periods: dict[str, List[PeriodOption]] = {"overall": [PeriodOption(key=None, label="All Data")]}
+
+    if df.empty:
+        periods["monthly"] = []
+        periods["daily"] = []
+        return periods
+
+    monthly_periods = sorted(df["timestamp"].dt.to_period("M").unique())
+    periods["monthly"] = [
+        PeriodOption(key=period, label=period.strftime("%b %Y"))
+        for period in monthly_periods
+    ]
+
+    daily_periods = sorted(df["timestamp"].dt.normalize().unique())
+    periods["daily"] = [
+        PeriodOption(key=pd.Timestamp(day), label=pd.Timestamp(day).strftime("%d %b %Y"))
+        for day in daily_periods
+    ]
+
+    return periods
+
+
+def _filter_dataframe(
+    df: pd.DataFrame,
+    mode: str,
+    option: PeriodOption,
+) -> pd.DataFrame:
+    if mode == "overall" or option.key is None:
+        return df.copy()
+
+    if mode == "monthly":
+        mask = df["timestamp"].dt.to_period("M") == option.key
+    else:  # daily
+        mask = df["timestamp"].dt.normalize() == option.key
+
+    return df.loc[mask].copy()
+
+
+def _format_subtitle(
+    mode: str,
+    option: PeriodOption,
+    start: pd.Timestamp | None,
+    end: pd.Timestamp | None,
+    stations_label: str,
+) -> str:
+    if mode == "overall" and start is not None and end is not None:
+        return (
+            f"Monitoring period: {start:%b %Y} - {end:%b %Y} | Stations: {stations_label}"
+        )
+
+    mode_label = "Monthly" if mode == "monthly" else "Daily"
+    detail = option.label if option.label else "(no selection)"
+    return f"{mode_label} view: {detail} | Stations: {stations_label}"
+
+
 def _create_buttons(y: int) -> List[Button]:
     buttons: List[Button] = []
     specs = [
-        ("Prev Chart", "prev"),
-        ("Next Chart", "next"),
+        ("Prev Chart", "prev_chart"),
+        ("Next Chart", "next_chart"),
+        ("Prev Period", "prev_period"),
+        ("Next Period", "next_period"),
+        ("Cycle Mode", "cycle_mode"),
         ("Reload Data", "reload"),
         ("Exit", "exit"),
     ]
@@ -230,24 +300,17 @@ def _draw_buttons(
     hovered: Button | None,
 ) -> None:
     for button in buttons:
-        color = BUTTON_HOVER if button is hovered else BUTTON_BG
+        if not button.enabled:
+            color = BUTTON_DISABLED_BG
+            text_color = BUTTON_DISABLED_TEXT
+        else:
+            color = BUTTON_HOVER if button is hovered else BUTTON_BG
+            text_color = BUTTON_TEXT
         pygame.draw.rect(surface, color, button.rect, border_radius=10)
         pygame.draw.rect(surface, BUTTON_BORDER, button.rect, width=1, border_radius=10)
-        label_surface = font.render(button.label, True, BUTTON_TEXT)
+        label_surface = font.render(button.label, True, text_color)
         label_rect = label_surface.get_rect(center=button.rect.center)
         surface.blit(label_surface, label_rect)
-
-
-def _load_assets():
-    stats = load_basic_statistics()
-    comparison = load_standard_comparison()
-    quality = load_power_quality_indices()
-    faults = load_fault_summary()
-    daily = load_daily_pattern()
-    weekly = load_weekly_pattern()
-    hourly = load_hourly_profile()
-    charts = build_chart_surfaces(daily, weekly, hourly, comparison)
-    return stats, comparison, quality, faults, charts
 
 
 def run() -> None:
@@ -293,20 +356,37 @@ def run() -> None:
 
     buttons = _create_buttons(button_y)
 
-    (
-        stats,
-        comparison,
-        quality,
-        faults,
-        charts,
-    ) = _load_assets()
+    dataset = pd.DataFrame()
+    period_options: dict[str, List[PeriodOption]] = {mode: [] for mode in VIEW_MODES}
+    period_options["overall"] = [PeriodOption(key=None, label="All Data")]
+    dataset_start: pd.Timestamp | None = None
+    dataset_end: pd.Timestamp | None = None
+    stations_label = "N/A"
 
-    text_blocks: List[Tuple[str, Sequence[str]]] = [
-        ("Basic Statistics", _format_basic_statistics(stats)),
-        ("Standards Compliance", _format_compliance(comparison)),
-        ("Power Quality Indices", _format_quality(quality)),
-        ("Fault Overview", _format_faults(faults)),
-    ]
+    view_mode = "overall"
+    period_index = 0
+    active_period = period_options["overall"][0]
+    current_record_count = 0
+    current_start: pd.Timestamp | None = None
+    current_end: pd.Timestamp | None = None
+
+    stats = pd.DataFrame()
+    comparison = pd.DataFrame()
+    quality = pd.DataFrame()
+    faults = pd.DataFrame()
+    charts: List[Tuple[str, pygame.Surface]] = []
+    text_blocks: List[Tuple[str, Sequence[str]]] = []
+    chart_index = 0
+
+    def _mode_label(value: str) -> str:
+        return {
+            "overall": "Whole Dataset",
+            "monthly": "Monthly",
+            "daily": "Daily",
+        }[value]
+
+    def _current_period_list() -> List[PeriodOption]:
+        return period_options.get(view_mode, [PeriodOption(key=None, label="All Data")])
 
     def _rebuild_sidebar_surface() -> None:
         nonlocal sidebar_surface, sidebar_content_height, sidebar_scroll_max, sidebar_offset
@@ -320,16 +400,44 @@ def run() -> None:
         sidebar_scroll_max = max(0, sidebar_content_height - sidebar_view_height)
         sidebar_offset = max(0, min(sidebar_offset, sidebar_scroll_max))
 
-    _rebuild_sidebar_surface()
+    def _update_subtitle() -> None:
+        nonlocal subtitle_surface
+        subtitle_text = _format_subtitle(
+            view_mode,
+            active_period,
+            dataset_start,
+            dataset_end,
+            stations_label,
+        )
+        subtitle_surface = body_font.render(subtitle_text, True, TEXT_COLOR)
 
-    chart_index = 0
-    status_message = ""
-    status_timeout = 0
-    running = True
+    def _sync_button_states() -> None:
+        period_list = _current_period_list()
+        has_period_nav = view_mode != "overall" and len(period_list) > 1
+        multi_charts = len(charts) > 1
+        for button in buttons:
+            if button.action in ("prev_chart", "next_chart"):
+                button.enabled = multi_charts
+            elif button.action in ("prev_period", "next_period"):
+                button.enabled = has_period_nav
+            else:
+                button.enabled = True
 
     def _update_blocks() -> None:
         nonlocal text_blocks, sidebar_offset
+        context_lines = [f"Mode: {_mode_label(view_mode)}"]
+        if view_mode != "overall":
+            context_lines.append(f"Period: {active_period.label}")
+        if current_start is not None and current_end is not None:
+            if current_start.date() == current_end.date():
+                context_lines.append(f"Span: {current_start:%d %b %Y}")
+            else:
+                context_lines.append(
+                    f"Span: {current_start:%d %b %Y} - {current_end:%d %b %Y}"
+                )
+        context_lines.append(f"Records: {current_record_count:,}")
         text_blocks = [
+            ("View Context", context_lines),
             ("Basic Statistics", _format_basic_statistics(stats)),
             ("Standards Compliance", _format_compliance(comparison)),
             ("Power Quality Indices", _format_quality(quality)),
@@ -338,42 +446,155 @@ def run() -> None:
         sidebar_offset = 0
         _rebuild_sidebar_surface()
 
+    def _refresh_analysis() -> None:
+        nonlocal stats, comparison, quality, faults, charts, chart_index, active_period
+        nonlocal current_record_count, current_start, current_end
+        period_list = _current_period_list()
+        if not period_list:
+            active_period = PeriodOption(key=None, label="All Data")
+        else:
+            nonlocal period_index
+            period_index = max(0, min(period_index, len(period_list) - 1))
+            active_period = period_list[period_index]
+
+        filtered = _filter_dataframe(dataset, view_mode, active_period)
+        current_record_count = len(filtered)
+        current_start = filtered["timestamp"].min() if not filtered.empty else None
+        current_end = filtered["timestamp"].max() if not filtered.empty else None
+
+        if filtered.empty:
+            stats = pd.DataFrame()
+            comparison = pd.DataFrame()
+            quality = pd.DataFrame()
+            faults = pd.DataFrame()
+            charts = []
+        else:
+            stats = calculate_basic_statistics(filtered)
+            comparison = compare_to_standards(filtered, STANDARDS)
+            quality = calculate_power_quality_indices(filtered, STANDARDS)
+            faults = perform_fault_analysis(filtered, STANDARDS)
+            patterns = identify_load_patterns(filtered)
+            charts = build_chart_surfaces(
+                patterns["daily"],
+                patterns["weekly"],
+                patterns["hourly_profile"],
+                comparison,
+            )
+
+        chart_index = min(chart_index, len(charts) - 1) if charts else 0
+        _update_blocks()
+        _update_subtitle()
+        _sync_button_states()
+
+    def _reload_dataset() -> None:
+        nonlocal dataset, period_options, dataset_start, dataset_end, stations_label
+        nonlocal view_mode, period_index
+
+        dataset = load_dataset()
+        period_options = _build_period_options(dataset)
+        period_options.setdefault("overall", [PeriodOption(key=None, label="All Data")])
+        if not period_options["overall"]:
+            period_options["overall"] = [PeriodOption(key=None, label="All Data")]
+
+        if dataset.empty:
+            dataset_start = None
+            dataset_end = None
+            stations_label = "N/A"
+        else:
+            dataset_start = dataset["timestamp"].min()
+            dataset_end = dataset["timestamp"].max()
+            stations = sorted(dataset["station_id"].unique())
+            stations_label = ", ".join(stations)
+
+        if view_mode != "overall" and not period_options.get(view_mode):
+            view_mode = "overall"
+            period_index = 0
+
+        period_list = _current_period_list()
+        if period_list:
+            period_index = max(0, min(period_index, len(period_list) - 1))
+        else:
+            period_index = 0
+
+        _refresh_analysis()
+
+    _reload_dataset()
+
+    status_message = ""
+    status_timeout = 0
+    running = True
+
+    def _advance_mode() -> str:
+        nonlocal view_mode, period_index
+        start_idx = VIEW_MODES.index(view_mode)
+        idx = start_idx
+        for _ in range(len(VIEW_MODES)):
+            idx = (idx + 1) % len(VIEW_MODES)
+            candidate = VIEW_MODES[idx]
+            if candidate == "overall" or period_options.get(candidate):
+                view_mode = candidate
+                period_index = 0
+                _refresh_analysis()
+                return _mode_label(view_mode)
+
+        view_mode = "overall"
+        period_index = 0
+        _refresh_analysis()
+        return _mode_label(view_mode)
+
+    def _apply_action(action: str) -> None:
+        nonlocal chart_index, period_index, running
+        period_list = _current_period_list()
+
+        if action == "next_chart" and charts:
+            if len(charts) > 1:
+                chart_index = (chart_index + 1) % len(charts)
+                _set_status(f"Showing chart {chart_index + 1}/{len(charts)}")
+            else:
+                _set_status("Only one chart available", 1500)
+        elif action == "prev_chart" and charts:
+            if len(charts) > 1:
+                chart_index = (chart_index - 1) % len(charts)
+                _set_status(f"Showing chart {chart_index + 1}/{len(charts)}")
+            else:
+                _set_status("Only one chart available", 1500)
+        elif action == "next_period" and view_mode != "overall" and period_list:
+            if len(period_list) > 1:
+                period_index = (period_index + 1) % len(period_list)
+                _refresh_analysis()
+                _set_status(f"Period: {active_period.label}")
+        elif action == "prev_period" and view_mode != "overall" and period_list:
+            if len(period_list) > 1:
+                period_index = (period_index - 1) % len(period_list)
+                _refresh_analysis()
+                _set_status(f"Period: {active_period.label}")
+        elif action == "cycle_mode":
+            label = _advance_mode()
+            _set_status(f"{label} view")
+        elif action == "reload":
+            clear_cache()
+            _reload_dataset()
+            _set_status("Data reloaded")
+        elif action == "exit":
+            running = False
+
     def _set_status(message: str, duration_ms: int = 2200) -> None:
         nonlocal status_message, status_timeout
         status_message = message
         status_timeout = pygame.time.get_ticks() + duration_ms
 
-    def _apply_action(action: str) -> None:
-        nonlocal chart_index, stats, comparison, quality, faults, charts, running
-        if action == "next" and charts:
-            chart_index = (chart_index + 1) % len(charts)
-            _set_status(f"Showing chart {chart_index + 1}/{len(charts)}")
-        elif action == "prev" and charts:
-            chart_index = (chart_index - 1) % len(charts)
-            _set_status(f"Showing chart {chart_index + 1}/{len(charts)}")
-        elif action == "reload":
-            clear_cache()
-            (
-                stats,
-                comparison,
-                quality,
-                faults,
-                charts,
-            ) = _load_assets()
-            chart_index = 0
-            _update_blocks()
-            _set_status("Data reloaded")
-        elif action == "exit":
-            running = False
-
     instructions_text = (
-        "Charts: buttons or arrow keys | Sidebar: wheel/PgUp/PgDn | R reloads data | Esc exits"
+        "Charts: buttons or arrow keys | Period: buttons or [ ] keys | Mode: button or M | "
+        "Sidebar: wheel/PgUp/PgDn | Reload: R | Exit: Esc"
     )
     instructions_surface = info_font.render(instructions_text, True, TEXT_COLOR)
 
     while running:
         mouse_pos = pygame.mouse.get_pos()
-        hovered_button = next((b for b in buttons if b.rect.collidepoint(mouse_pos)), None)
+        hovered_button = next(
+            (b for b in buttons if b.enabled and b.rect.collidepoint(mouse_pos)),
+            None,
+        )
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -383,11 +604,17 @@ def run() -> None:
                 if event.key in (pygame.K_ESCAPE, pygame.K_q):
                     _apply_action("exit")
                 elif event.key == pygame.K_RIGHT:
-                    _apply_action("next")
+                    _apply_action("next_chart")
                 elif event.key == pygame.K_LEFT:
-                    _apply_action("prev")
+                    _apply_action("prev_chart")
                 elif event.key == pygame.K_r:
                     _apply_action("reload")
+                elif event.key == pygame.K_m:
+                    _apply_action("cycle_mode")
+                elif event.key == pygame.K_RIGHTBRACKET:
+                    _apply_action("next_period")
+                elif event.key == pygame.K_LEFTBRACKET:
+                    _apply_action("prev_period")
                 elif event.key == pygame.K_UP:
                     sidebar_offset = max(0, sidebar_offset - 28)
                 elif event.key == pygame.K_DOWN:
@@ -415,7 +642,7 @@ def run() -> None:
             elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                 # Buttons are the primary interaction target for casual users.
                 for button in buttons:
-                    if button.rect.collidepoint(event.pos):
+                    if button.enabled and button.rect.collidepoint(event.pos):
                         _apply_action(button.action)
                         break
 

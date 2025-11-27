@@ -33,6 +33,8 @@
 - Behaviour:
 	- Metrics in the left panel refresh directly from the CSV file; press `R` or click `Reload Data` to re-fetch.
 	- Charts on the right rotate with `Prev`/`Next` buttons or arrow keys.
+	- Switch between whole-dataset, monthly, and daily summaries with the `Cycle Mode` button (or press `M`).
+	- Browse the available months/days using the `Prev/Next Period` buttons or the `[` and `]` keys.
 	- Scroll the sidebar using the mouse wheel, Page Up/Down, Home/End, or the scrollbar to inspect all sections (including Fault Overview).
 	- Exit using the `Exit` button, `Esc`, or `Q`.
 - Resize support is fixed at 1280x720; adjust constants in `dashboard/app.py` if different dimensions are required.
