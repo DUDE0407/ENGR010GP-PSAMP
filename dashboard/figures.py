@@ -67,11 +67,27 @@ def _bar_chart(
     return _figure_to_surface(fig)
 
 
+def _clustered_bar_chart(
+    data: pd.DataFrame,
+    title: str,
+    ylabel: str,
+) -> pygame.Surface:
+    fig, ax = plt.subplots(figsize=(8.0, 4.5))
+    data.plot(kind="bar", ax=ax)
+    ax.set_title(title)
+    ax.set_ylabel(ylabel)
+    ax.grid(axis="y", linestyle="--", linewidth=0.5, alpha=0.6)
+    ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.18), ncol=min(3, data.shape[1]))
+    fig.tight_layout()
+    return _figure_to_surface(fig)
+
+
 def build_chart_surfaces(
     daily: pd.DataFrame,
     weekly: pd.DataFrame,
     hourly: pd.DataFrame,
     compliance: pd.DataFrame,
+    circuit_metrics: pd.DataFrame,
 ) -> List[Tuple[str, pygame.Surface]]:
     charts: List[Tuple[str, pygame.Surface]] = []
 
@@ -175,6 +191,40 @@ def build_chart_surfaces(
                     ]],
                     "Percentage Within Limits",
                     "Percent of Measurements",
+                ),
+            )
+        )
+
+    if not circuit_metrics.empty:
+        pf_table = (
+            circuit_metrics.set_index("station_id")[
+                ["existing_power_factor", "expected_power_factor"]
+            ]
+        )
+        charts.append(
+            (
+                "Power Factor Correction",
+                _clustered_bar_chart(
+                    pf_table,
+                    "Existing vs Corrected Power Factor",
+                    "Power Factor",
+                ),
+            )
+        )
+
+        correction_table = (
+            circuit_metrics.set_index("station_id")[
+                ["required_reactive_correction_mvar"]
+            ]
+            .rename(columns={"required_reactive_correction_mvar": "Required MVAr"})
+        )
+        charts.append(
+            (
+                "Capacitor Sizing",
+                _clustered_bar_chart(
+                    correction_table,
+                    "Recommended Reactive Compensation",
+                    "MVAr",
                 ),
             )
         )

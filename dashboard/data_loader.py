@@ -10,6 +10,7 @@ import pandas as pd
 from analysis_core import (
     GridStandards,
     calculate_basic_statistics,
+    calculate_circuit_metrics,
     calculate_power_quality_indices,
     compare_to_standards,
     identify_load_patterns,
@@ -63,6 +64,11 @@ def load_fault_summary() -> pd.DataFrame:
 
 
 @lru_cache(maxsize=1)
+def load_circuit_metrics() -> pd.DataFrame:
+    return calculate_circuit_metrics(_load_dataset(), STANDARDS).copy()
+
+
+@lru_cache(maxsize=1)
 def load_daily_pattern() -> pd.DataFrame:
     return _load_patterns()["daily"].copy()
 
@@ -87,6 +93,7 @@ def clear_cache() -> None:
     load_standard_comparison.cache_clear()
     load_power_quality_indices.cache_clear()
     load_fault_summary.cache_clear()
+    load_circuit_metrics.cache_clear()
     load_daily_pattern.cache_clear()
     load_weekly_pattern.cache_clear()
     load_hourly_profile.cache_clear()

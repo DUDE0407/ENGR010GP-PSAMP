@@ -19,6 +19,7 @@ class GridStandards:
     current_max: float = 120.0
     power_factor_min: float = 0.90
     power_factor_fault: float = 0.80
+    power_factor_target: float = 0.95
 
 
 def load_power_data(csv_path: Path) -> pd.DataFrame:
@@ -127,9 +128,11 @@ def calculate_power_quality_indices(df: pd.DataFrame, standards: GridStandards) 
     """Compute basic power quality metrics for each station."""
 
     work = df.copy()
-    work["apparent_power_mva"] = np.hypot(
-        work["real_power_mw"], work["reactive_power_mvar"]
-    )
+    real_power = work["real_power_mw"].astype(float)
+    reactive_power = work["reactive_power_mvar"].astype(float)
+    complex_power = real_power + 1j * reactive_power
+    work["apparent_power_mva"] = np.abs(complex_power)
+    work["phase_angle_deg"] = np.degrees(np.angle(complex_power))
     work["voltage_deviation"] = (work["voltage_pu"] - 1.0).abs()
 
     def low_pf_pct(series: pd.Series) -> float:
@@ -149,6 +152,8 @@ def calculate_power_quality_indices(df: pd.DataFrame, standards: GridStandards) 
         avg_voltage_deviation=("voltage_deviation", "mean"),
         voltage_std=("voltage_pu", "std"),
         avg_apparent_power_mva=("apparent_power_mva", "mean"),
+        avg_phase_angle_deg=("phase_angle_deg", "mean"),
+        phase_angle_std_deg=("phase_angle_deg", "std"),
         peak_demand_mw=("real_power_mw", "max"),
         avg_demand_mw=("real_power_mw", "mean"),
         avg_reactive_power_mvar=("reactive_power_mvar", "mean"),
@@ -158,6 +163,61 @@ def calculate_power_quality_indices(df: pd.DataFrame, standards: GridStandards) 
         "avg_demand_mw"
     ].replace(0, np.nan)
     return summary.reset_index()
+
+
+def calculate_circuit_metrics(df: pd.DataFrame, standards: GridStandards) -> pd.DataFrame:
+    """Derive RMS quantities and power-factor correction needs per station."""
+
+    target_pf = float(np.clip(standards.power_factor_target, 0.0, 1.0))
+    target_angle_rad = float(np.arccos(np.clip(target_pf, -1.0, 1.0))) if 0.0 < target_pf <= 1.0 else 0.0
+    target_angle_deg = float(np.degrees(target_angle_rad))
+
+    rows: list[dict[str, float | str]] = []
+    for station, group in df.groupby("station_id"):
+        if group.empty:
+            continue
+
+        voltage_samples = group["voltage_pu"].astype(float)
+        current_samples = group["current_pu"].astype(float)
+        real_samples = group["real_power_mw"].astype(float)
+        reactive_samples = group["reactive_power_mvar"].astype(float)
+
+        voltage_rms = float(np.sqrt(np.mean(np.square(voltage_samples))))
+        current_rms = float(np.sqrt(np.mean(np.square(current_samples))))
+
+        complex_samples = real_samples + 1j * reactive_samples
+        average_complex_power = complex_samples.mean()
+        avg_real = float(np.real(average_complex_power))
+        avg_reactive = float(np.imag(average_complex_power))
+        apparent_mag = float(np.abs(average_complex_power))
+
+        existing_pf = float(avg_real / apparent_mag) if apparent_mag > 0 else np.nan
+        existing_angle_deg = float(np.degrees(np.angle(average_complex_power)))
+
+        target_reactive = avg_real * np.tan(target_angle_rad) if avg_real != 0 else 0.0
+        reactive_correction = max(0.0, avg_reactive - target_reactive)
+        expected_reactive = avg_reactive - reactive_correction
+        expected_apparent = float(np.hypot(avg_real, expected_reactive))
+        expected_pf = float(avg_real / expected_apparent) if expected_apparent > 0 else np.nan
+
+        rows.append(
+            {
+                "station_id": station,
+                "voltage_rms_pu": voltage_rms,
+                "current_rms_pu": current_rms,
+                "avg_real_power_mw": avg_real,
+                "avg_reactive_power_mvar": avg_reactive,
+                "existing_power_factor": existing_pf,
+                "existing_phase_angle_deg": existing_angle_deg,
+                "target_power_factor": target_pf,
+                "target_phase_angle_deg": target_angle_deg,
+                "required_reactive_correction_mvar": reactive_correction,
+                "required_capacitor_bank_kvar": reactive_correction * 1000.0,
+                "expected_power_factor": expected_pf,
+            }
+        )
+
+    return pd.DataFrame(rows)
 
 
 def perform_fault_analysis(df: pd.DataFrame, standards: GridStandards) -> pd.DataFrame:

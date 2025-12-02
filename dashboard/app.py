@@ -11,6 +11,7 @@ import pygame
 from analysis_core import (
     GridStandards,
     calculate_basic_statistics,
+    calculate_circuit_metrics,
     calculate_power_quality_indices,
     compare_to_standards,
     identify_load_patterns,
@@ -39,6 +40,26 @@ BLOCK_PADDING = 14
 BUTTON_WIDTH = 150
 BUTTON_HEIGHT = 44
 BUTTON_SPACING = 16
+MIN_CHART_HEIGHT = 240
+INNER_CHART_MIN_WIDTH = 240
+INNER_CHART_MIN_HEIGHT = 200
+CHART_SIDE_MARGIN = 30
+CHART_BOTTOM_MARGIN = 60
+CAPTION_VERTICAL_GAP = 30
+TITLE_SUBTITLE_GAP = 26
+CHART_AREA_BOTTOM_PADDING = 40
+SCROLL_LINE_STEP = 28
+MOUSE_WHEEL_STEP = 32
+SCROLL_KNOB_MIN_HEIGHT = 18
+FRAME_RATE = 30
+DEFAULT_STATUS_DURATION_MS = 2200
+SINGLE_CHART_NOTICE_MS = 1500
+FONT_FAMILY = "Segoe UI"
+TITLE_FONT_SIZE = 32
+HEADING_FONT_SIZE = 22
+BODY_FONT_SIZE = 18
+INFO_FONT_SIZE = 16
+BUTTON_FONT_SIZE = 18
 
 VIEW_MODES: Tuple[str, ...] = ("overall", "monthly", "daily")
 STANDARDS = GridStandards()
@@ -82,19 +103,34 @@ def _format_basic_statistics(stats: pd.DataFrame) -> List[str]:
     for _, row in stats.iterrows():
         lines.append(f"{row['station_id']}")
         lines.append(
-            f"  Voltage: {_format_value(row['voltage_pu_mean'], '{:.3f}')} pu"
+            "  Voltage (mean/median/std): "
+            f"{_format_value(row['voltage_pu_mean'], '{:.3f}')} / "
+            f"{_format_value(row['voltage_pu_median'], '{:.3f}')} / "
+            f"{_format_value(row['voltage_pu_std'], '{:.3f}')}"
         )
         lines.append(
-            f"  Current: {_format_value(row['current_pu_mean'], '{:.1f}')} pu"
+            "  Current (mean/median/std): "
+            f"{_format_value(row['current_pu_mean'], '{:.2f}')} / "
+            f"{_format_value(row['current_pu_median'], '{:.2f}')} / "
+            f"{_format_value(row['current_pu_std'], '{:.2f}')}"
         )
         lines.append(
-            f"  Real Power: {_format_value(row['real_power_mw_mean'], '{:.1f}')} MW"
+            "  Real Power (mean/median/std): "
+            f"{_format_value(row['real_power_mw_mean'], '{:.2f}')} / "
+            f"{_format_value(row['real_power_mw_median'], '{:.2f}')} / "
+            f"{_format_value(row['real_power_mw_std'], '{:.2f}')}"
         )
         lines.append(
-            f"  Reactive Power: {_format_value(row['reactive_power_mvar_mean'], '{:.1f}')} MVAr"
+            "  Reactive Power (mean/median/std): "
+            f"{_format_value(row['reactive_power_mvar_mean'], '{:.2f}')} / "
+            f"{_format_value(row['reactive_power_mvar_median'], '{:.2f}')} / "
+            f"{_format_value(row['reactive_power_mvar_std'], '{:.2f}')}"
         )
         lines.append(
-            f"  Power Factor: {_format_value(row['power_factor_mean'], '{:.3f}')}"
+            "  Power Factor (mean/median/std): "
+            f"{_format_value(row['power_factor_mean'], '{:.3f}')} / "
+            f"{_format_value(row['power_factor_median'], '{:.3f}')} / "
+            f"{_format_value(row['power_factor_std'], '{:.3f}')}"
         )
         lines.append("")
     if lines and lines[-1] == "":
@@ -146,7 +182,51 @@ def _format_quality(quality: pd.DataFrame) -> List[str]:
         lines.append(
             f"  Avg reactive power: {_format_value(row['avg_reactive_power_mvar'], '{:.2f}')} MVAr"
         )
+        lines.append(
+            f"  Avg apparent power: {_format_value(row['avg_apparent_power_mva'], '{:.2f}')} MVA"
+        )
+        lines.append(
+            "  Mean phase angle / std: "
+            f"{_format_value(row['avg_phase_angle_deg'], '{:.1f}')} deg / "
+            f"{_format_value(row['phase_angle_std_deg'], '{:.1f}')} deg"
+        )
         lines.append(f"  Load factor: {_format_value(row['load_factor'], '{:.3f}')}")
+        lines.append("")
+    if lines and lines[-1] == "":
+        lines.pop()
+    return lines
+
+
+def _format_circuit_metrics(metrics: pd.DataFrame) -> List[str]:
+    lines: List[str] = []
+    if metrics.empty:
+        return lines
+    for _, row in metrics.iterrows():
+        lines.append(f"{row['station_id']}")
+        lines.append(
+            f"  Voltage RMS: {_format_value(row['voltage_rms_pu'], '{:.3f}')} pu"
+        )
+        lines.append(
+            f"  Current RMS: {_format_value(row['current_rms_pu'], '{:.3f}')} pu"
+        )
+        lines.append(
+            f"  PF existing/target: {_format_value(row['existing_power_factor'], '{:.3f}')} / "
+            f"{_format_value(row['target_power_factor'], '{:.3f}')}"
+        )
+        lines.append(
+            f"  Phase angle (deg): {_format_value(row['existing_phase_angle_deg'], '{:.1f}')} → "
+            f"{_format_value(row['target_phase_angle_deg'], '{:.1f}')}"
+        )
+        lines.append(
+            "  Capacitor requirement: "
+            f"{_format_value(row['required_reactive_correction_mvar'], '{:.2f}')} MVAr"
+        )
+        lines.append(
+            f"  Capacitor rating: {_format_value(row['required_capacitor_bank_kvar'], '{:.1f}')} kVAr"
+        )
+        lines.append(
+            f"  Corrected PF: {_format_value(row['expected_power_factor'], '{:.3f}')}"
+        )
         lines.append("")
     if lines and lines[-1] == "":
         lines.pop()
@@ -361,11 +441,11 @@ def run() -> None:
     pygame.display.set_caption("Power Analysis Dashboard")
     clock = pygame.time.Clock()
 
-    title_font = pygame.font.SysFont("Segoe UI", 32, bold=True)
-    heading_font = pygame.font.SysFont("Segoe UI", 22, bold=True)
-    body_font = pygame.font.SysFont("Segoe UI", 18)
-    info_font = pygame.font.SysFont("Segoe UI", 16)
-    button_font = pygame.font.SysFont("Segoe UI", 18, bold=True)
+    title_font = pygame.font.SysFont(FONT_FAMILY, TITLE_FONT_SIZE, bold=True)
+    heading_font = pygame.font.SysFont(FONT_FAMILY, HEADING_FONT_SIZE, bold=True)
+    body_font = pygame.font.SysFont(FONT_FAMILY, BODY_FONT_SIZE)
+    info_font = pygame.font.SysFont(FONT_FAMILY, INFO_FONT_SIZE)
+    button_font = pygame.font.SysFont(FONT_FAMILY, BUTTON_FONT_SIZE, bold=True)
 
     title_surface = title_font.render("Power Grid Analysis Dashboard", True, TEXT_COLOR)
     subtitle_surface = body_font.render(
@@ -375,8 +455,16 @@ def run() -> None:
     )
 
     button_y = SCREEN_SIZE[1] - PADDING - BUTTON_HEIGHT
-    chart_top = PADDING + title_surface.get_height() + subtitle_surface.get_height() + 26
-    chart_height = max(240, button_y - chart_top - 40)
+    chart_top = (
+        PADDING
+        + title_surface.get_height()
+        + subtitle_surface.get_height()
+        + TITLE_SUBTITLE_GAP
+    )
+    chart_height = max(
+        MIN_CHART_HEIGHT,
+        button_y - chart_top - CHART_AREA_BOTTOM_PADDING,
+    )
     chart_width = SCREEN_SIZE[0] - SIDEBAR_WIDTH - (PADDING * 4)
 
     sidebar_rect = pygame.Rect(PADDING, chart_top, SIDEBAR_WIDTH - (PADDING // 2), chart_height)
@@ -387,7 +475,7 @@ def run() -> None:
         chart_height,
     )
 
-    caption_offset = heading_font.get_height() + 30
+    caption_offset = heading_font.get_height() + CAPTION_VERTICAL_GAP
 
     sidebar_width = max(1, sidebar_rect.width - (BLOCK_PADDING * 2))
     sidebar_view_height = max(1, sidebar_rect.height - (BLOCK_PADDING * 2))
@@ -415,6 +503,7 @@ def run() -> None:
     stats = pd.DataFrame()
     comparison = pd.DataFrame()
     quality = pd.DataFrame()
+    circuit_metrics = pd.DataFrame()
     faults = pd.DataFrame()
     charts: List[Tuple[str, pygame.Surface]] = []
     text_blocks: List[Tuple[str, Sequence[str]]] = []
@@ -483,13 +572,15 @@ def run() -> None:
             ("Basic Statistics", _format_basic_statistics(stats)),
             ("Standards Compliance", _format_compliance(comparison)),
             ("Power Quality Indices", _format_quality(quality)),
+            ("Circuit Metrics", _format_circuit_metrics(circuit_metrics)),
             ("Fault Overview", _format_faults(faults)),
         ]
         sidebar_offset = 0
         _rebuild_sidebar_surface()
 
     def _refresh_analysis() -> None:
-        nonlocal stats, comparison, quality, faults, charts, chart_index, active_period
+        nonlocal stats, comparison, quality, circuit_metrics, faults
+        nonlocal charts, chart_index, active_period
         nonlocal current_record_count, current_start, current_end
         period_list = _current_period_list()
         if not period_list:
@@ -508,12 +599,14 @@ def run() -> None:
             stats = pd.DataFrame()
             comparison = pd.DataFrame()
             quality = pd.DataFrame()
+            circuit_metrics = pd.DataFrame()
             faults = pd.DataFrame()
             charts = []
         else:
             stats = calculate_basic_statistics(filtered)
             comparison = compare_to_standards(filtered, STANDARDS)
             quality = calculate_power_quality_indices(filtered, STANDARDS)
+            circuit_metrics = calculate_circuit_metrics(filtered, STANDARDS)
             faults = perform_fault_analysis(filtered, STANDARDS)
             patterns = identify_load_patterns(filtered)
             charts = build_chart_surfaces(
@@ -521,6 +614,7 @@ def run() -> None:
                 patterns["weekly"],
                 patterns["hourly_profile"],
                 comparison,
+                circuit_metrics,
             )
             if view_mode == "daily":
                 excluded = {
@@ -605,13 +699,13 @@ def run() -> None:
                 chart_index = (chart_index + 1) % len(charts)
                 _set_status(f"Showing chart {chart_index + 1}/{len(charts)}")
             else:
-                _set_status("Only one chart available", 1500)
+                _set_status("Only one chart available", SINGLE_CHART_NOTICE_MS)
         elif action == "prev_chart" and charts:
             if len(charts) > 1:
                 chart_index = (chart_index - 1) % len(charts)
                 _set_status(f"Showing chart {chart_index + 1}/{len(charts)}")
             else:
-                _set_status("Only one chart available", 1500)
+                _set_status("Only one chart available", SINGLE_CHART_NOTICE_MS)
         elif action == "next_period" and view_mode != "overall" and period_list:
             if len(period_list) > 1:
                 period_index = (period_index + 1) % len(period_list)
@@ -632,7 +726,10 @@ def run() -> None:
         elif action == "exit":
             running = False
 
-    def _set_status(message: str, duration_ms: int = 2200) -> None:
+    def _set_status(
+        message: str,
+        duration_ms: int = DEFAULT_STATUS_DURATION_MS,
+    ) -> None:
         nonlocal status_message, status_timeout
         status_message = message
         status_timeout = pygame.time.get_ticks() + duration_ms
@@ -670,9 +767,12 @@ def run() -> None:
                 elif event.key == pygame.K_LEFTBRACKET:
                     _apply_action("prev_period")
                 elif event.key == pygame.K_UP:
-                    sidebar_offset = max(0, sidebar_offset - 28)
+                    sidebar_offset = max(0, sidebar_offset - SCROLL_LINE_STEP)
                 elif event.key == pygame.K_DOWN:
-                    sidebar_offset = min(sidebar_scroll_max, sidebar_offset + 28)
+                    sidebar_offset = min(
+                        sidebar_scroll_max,
+                        sidebar_offset + SCROLL_LINE_STEP,
+                    )
                 elif event.key == pygame.K_PAGEUP:
                     sidebar_offset = max(0, sidebar_offset - sidebar_view_height // 2)
                 elif event.key == pygame.K_PAGEDOWN:
@@ -690,7 +790,7 @@ def run() -> None:
                         0,
                         min(
                             sidebar_scroll_max,
-                            sidebar_offset - event.y * 32,
+                            sidebar_offset - event.y * MOUSE_WHEEL_STEP,
                         ),
                     )
             elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
@@ -727,7 +827,10 @@ def run() -> None:
                 sidebar_view_height,
             )
             pygame.draw.rect(screen, (54, 58, 72), track_rect, border_radius=2)
-            knob_height = max(18, int(sidebar_view_height * sidebar_view_height / sidebar_content_height))
+            knob_height = max(
+                SCROLL_KNOB_MIN_HEIGHT,
+                int(sidebar_view_height * sidebar_view_height / sidebar_content_height),
+            )
             knob_top = track_rect.top
             if sidebar_scroll_max > 0:
                 knob_top += int((sidebar_offset / sidebar_scroll_max) * (sidebar_view_height - knob_height))
@@ -736,10 +839,16 @@ def run() -> None:
             pygame.draw.rect(screen, ACCENT_COLOR, knob_rect, border_radius=2)
 
         chart_canvas_rect = pygame.Rect(
-            chart_rect.left + 30,
+            chart_rect.left + CHART_SIDE_MARGIN,
             chart_rect.top + caption_offset,
-            max(240, chart_rect.width - 60),
-            max(200, chart_rect.height - caption_offset - 60),
+            max(
+                INNER_CHART_MIN_WIDTH,
+                chart_rect.width - (CHART_SIDE_MARGIN * 2),
+            ),
+            max(
+                INNER_CHART_MIN_HEIGHT,
+                chart_rect.height - caption_offset - CHART_BOTTOM_MARGIN,
+            ),
         )
         # The chart surface is scaled into this inner rectangle to preserve consistent margins.
 
@@ -775,6 +884,6 @@ def run() -> None:
             screen.blit(status_surface, status_rect)
 
         pygame.display.flip()
-        clock.tick(30)
+        clock.tick(FRAME_RATE)
 
     pygame.quit()
