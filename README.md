@@ -29,6 +29,7 @@
 		- Includes corrections-focused visuals highlighting power factor improvements and capacitor sizing recommendations.
 	- Logs progress to the console for traceability.
 - Rerun the script whenever the data file changes to refresh exported reports.
+- Reference `power_analysis_results.ipynb` for an annotated, executable walkthrough of the full workflow (data loading, aggregation, diagnostics, and visual exports).
 
 ## Using the Dashboard Application
 - Launch with `python main.py` (requires `pygame`).
