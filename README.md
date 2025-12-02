@@ -1,11 +1,14 @@
 # ENGR 010 Group Project - Electrical Engineering Option
 
 ## Overview
+# → Explains what the project does: reads the dataset, computes metrics,
+#   generates reports/plots, and provides an interactive dashboard.
 - Evaluates `power_system_data.csv` to highlight voltage, current, real-power, reactive-power, and derived circuit health metrics (RMS, power-factor correction) for substations SUB_001 to SUB_003 (Jan-Jun 2024).
 - Outputs actionable metrics (basic statistics, standards compliance, power quality indices, circuit correction guidance, fault summaries) and supporting visualisations.
 - Provides an interactive dashboard for quick review alongside an automated reporting pipeline.
 
 ## Requirements
+# → Lists software and Python packages needed to run the analysis + dashboard.
 - Python 3.14 (tested with the project virtual environment).
 - Recommended packages (install with `python -m pip install -r requirements.txt` if provided, or install individually):
 	- `numpy`
@@ -16,11 +19,13 @@
 - Optional: `jupyter` for viewing `power_analysis_results.ipynb`.
 
 ## First-Time Setup
+# → Setup instructions: virtual environment, dependency install, dataset check.
 - (Optional) Create and activate a virtual environment: `python -m venv .venv` then `.venv\Scripts\activate` (PowerShell).
 - Install dependencies listed above using `python -m pip install <package>`.
 - Verify the CSV dataset `power_system_data.csv` is present in the repository root.
 
 ## Running the Batch Analysis
+# → Explains how to run the automated reporting script and describes each output.
 - Execute `python power_analysis_script.py` from the project root.
 - The script reads `power_system_data.csv` via `analysis_core.py`, then:
 	- Saves CSV summaries under `analysis_outputs/reports/`.
@@ -32,6 +37,7 @@
 - Reference `power_analysis_results.ipynb` for an annotated, executable walkthrough of the full workflow (data loading, aggregation, diagnostics, and visual exports).
 
 ## Using the Dashboard Application
+# → Instructions for launching and navigating the interactive Pygame dashboard.
 - Launch with `python main.py` (requires `pygame`).
 - Behaviour:
 	- Metrics in the left panel refresh directly from the CSV file; press `R` or click `Reload Data` to re-fetch.
@@ -43,16 +49,19 @@
 - Resize support is fixed at 1280x720; adjust constants in `dashboard/app.py` if different dimensions are required.
 
 ## Data Updates and Maintenance
+# → Explains how to update the dataset and maintain the analytics pipeline.
 - Replace `power_system_data.csv` with a file using the same schema to analyse a new time window.
 - Clear cached data (if the dashboard is running) with the `Reload Data` control; the analysis script reloads on each run.
 - After modifying analytics logic inside `analysis_core.py`, rerun both the script and the dashboard to validate outputs.
 
 ## Troubleshooting
+# → Lists solutions for common runtime problems with pygame, matplotlib, or performance.
 - If `pygame` fails to import, install it with `python -m pip install pygame`; Windows users may need Microsoft Visual C++ redistributables.
 - Matplotlib back-end errors usually resolve by upgrading `matplotlib` or installing `pyqt` if interactive windows are desired for standalone plots.
 - For performance issues during dashboard use, close other applications to free GPU/CPU resources, or lower the screen resolution constants.
 
 ## Change Log Snapshot
+# → Shows chronological project updates and new features added.
 - **Nov 24, 2025**: Automated reporting pipeline added (`power_analysis_script.py`) with export directories and data science dependencies.
 - **Dec 03, 2025**: Reactive power analytics expanded across dashboard and batch reports, including new MVAr visuals.
 - **Dec 01, 2025**: Added RMS circuit metrics and power-factor correction guidance with dashboard visualisations and batch report exports.
