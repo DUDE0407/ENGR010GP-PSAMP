@@ -1,8 +1,7 @@
 # ENGR 010 Group Project - Electrical Engineering Option
 
 ## Overview
-# → Explains what the project does: reads the dataset, computes metrics,
-#   generates reports/plots, and provides an interactive dashboard.
+# → Explains what the project does: reads the dataset, computes metrics, generates reports/plots, and provides an interactive dashboard.
 - Evaluates `power_system_data.csv` to highlight voltage, current, real-power, reactive-power, and derived circuit health metrics (RMS, power-factor correction) for substations SUB_001 to SUB_003 (Jan-Jun 2024).
 - Outputs actionable metrics (basic statistics, standards compliance, power quality indices, circuit correction guidance, fault summaries) and supporting visualisations.
 - Provides an interactive dashboard for quick review alongside an automated reporting pipeline.
